@@ -23,12 +23,17 @@ Released under the MIT License
     # Default settings
     defaults:
       debug: false  # set to true to log messages to the console
-      navSelector: 'a[rel=next]'
+      navSelector: null
+      nextSelector: 'a[rel=next]'
       buffer: 1000  # 1000px buffer by default
-      loading: null # optional callback when next-page request begins
       success: null # optional callback when next-page request finishes
       error:   null # optional callback when next-page request fails
       context: window # context to define the scrolling container
+      loading: null
+      ajax:
+        path: undefined
+        dataType: 'html'
+        method: 'html'
       state:
         paused:  false
         loading: false
@@ -41,7 +46,7 @@ Released under the MIT License
       @$container = $(container)
       @$table = $(container).find('table')
       @$context = $(@options.context)
-      @instanceId = @constructor._nextId()
+      @instanceId = @constructor._nextInstanceId()
       @init()
 
     # Setup and bind to related events
@@ -61,7 +66,7 @@ Released under the MIT License
     # Check the distance of the nav selector from the bottom of the window and fire
     # load event if close enough
     check: ->
-      nav = @$container.find(@options.navSelector)
+      nav = $(@options.nextSelector)
       if nav.size() == 0
         @_log "No more pages to load"
       else
@@ -77,40 +82,51 @@ Released under the MIT License
         else
           @next() # load the next page
 
+    nextPageUrl: ->
+      if typeof @options.ajax.path == 'function'
+        @options.ajax.path $(@options.nextSelector)
+      else
+        $(@options.nextSelector).attr('href')
+
     # Load the next page
     next: ->
       if @options.state.done
         @_log "Loaded all pages"
       else
         @_loading()
+      url = @nextPageUrl()
 
-        $container = @$container
-        @requestAts.push +new Date # note when this request started
-        $.getScript(@$container.find(@options.navSelector).attr('href'))
-          .done(=> @_success($container))
-          .fail(=> @_error($container))
+      $container = @$container
+      $.ajax
+        url: url
+        dataType: @options.ajax.dataType
+        success: (data, textStatus, jqXHR) =>
+          @_success($container, data)
+
+        error: (xhr, options, error) =>
+          @_error($container, error)
 
     _loading: ->
       @options.state.loading = true
       @_log "Loading next page..."
       if typeof @options.loading is 'function'
-        @$container.find(@options.navSelector).each(@options.loading)
+        @options.loading $(@options.navSelector)
 
-    _success: ($container) ->
+    _success: ($container, newItems) ->
       # ignore any requests for elements that are no longer on the page
       return unless $.contains(document, $container[0])
       @options.state.loading = false
       @_log "New page loaded!"
       if typeof @options.success is 'function'
-        $container.find(@options.navSelector).each(@options.success)
+        @options.success @$container, newItems
 
-    _error: ($container) ->
+    _error: ($container, error) ->
       # ignore any requests for elements that are no longer on the page
       return unless $.contains(document, $container[0])
       @options.state.loading = false
       @_log "Error loading new page :("
       if typeof @options.error is 'function'
-        $container.find(@options.navSelector).each(@options.error)
+        @options.error @$container, error
 
     # Pause firing of events on scroll
     pause: ->
